@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+import re
 
 URL = "https://en.wikipedia.org/wiki/Lee_Resolution"
 
@@ -17,5 +18,35 @@ def getContent(url):
     except:
         print(f"Failed to retrieve {url}")
         return None
-    
+
+def getLinks(content):
+    soup = BeautifulSoup(content, 'html.parser')
+    links = []
+    for link in soup.find_all('a'):
+        links.append(link.get('href'))
+    return links
+
+def findWord(searchWord, content):
+    soup = BeautifulSoup(content, 'html.parser')
+    results = soup.body.find_all(string=re.compile('.*{0}.*'.format(searchWord), re.IGNORECASE), recursive=True)
+
+    print('Found the word "{0}" {1} times\n'.format(searchWord, len(results)))
+
+    for text_content in results:
+        words = text_content.split()
+        for index, word in enumerate(words):
+            # If the content contains the search word twice or more this will fire for each occurence
+            if word.lower() == searchWord.lower():
+                print('Whole content: "{0}"'.format(text_content))
+                before = None
+                after = None
+                # Check if it's a first word
+                if index != 0:
+                    before = words[index-1]
+                # Check if it's a last word
+                if index != len(words)-1:
+                    after = words[index+1]
+                print('\tWord before: "{0}", word after: "{1}"'.format(before, after))
+
+
 getContent(URL)
