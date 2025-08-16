@@ -32,6 +32,8 @@ def findWord(searchWord, content):
 
     print('Found the word "{0}" {1} times\n'.format(searchWord, len(results)))
 
+    word_occurrences = []  # Array to store results
+    
     for text_content in results:
         words = text_content.split()
         for index, word in enumerate(words):
@@ -47,6 +49,16 @@ def findWord(searchWord, content):
                 if index != len(words)-1:
                     after = words[index+1]
                 print('\tWord before: "{0}", word after: "{1}"'.format(before, after))
+                
+                # Add to array
+                word_occurrences.append({
+                    'content': text_content,
+                    'word_before': before,
+                    'word_after': after,
+                    'position': index
+                })
+    
+    return word_occurrences  # Return the array
 
 
 content = getContent(URL)
