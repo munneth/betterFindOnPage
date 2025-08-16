@@ -70,6 +70,7 @@ document.getElementById("searchBtn").addEventListener("click", () => {
     )
       .then((response) => response.json())
       .then((data) => {
+        console.log("Works");
         displaySearchResults(data);
       })
       .catch((error) => {
@@ -89,14 +90,22 @@ function displaySearchResults(data) {
     title.textContent = `Found "${data.searchword}" ${data.total_occurrences} times:`;
     linkList.appendChild(title);
 
+    // Display array index information
+    const indexInfo = document.createElement("p");
+    indexInfo.innerHTML = `<strong>Array indices: [${data.occurrences
+      .map((_, i) => i)
+      .join(", ")}]</strong>`;
+    linkList.appendChild(indexInfo);
+
     data.occurrences.forEach((occurrence, index) => {
       const li = document.createElement("li");
       li.innerHTML = `
-        <strong>Match ${index + 1}:</strong><br>
+        <strong>Match ${index + 1} (Array Index: ${index}):</strong><br>
         <em>Context:</em> ${occurrence.word_before || "START"} <strong>${
         data.searchword
       }</strong> ${occurrence.word_after || "END"}<br>
-        <em>Content:</em> ${occurrence.content.substring(0, 100)}...
+        <em>Content:</em> ${occurrence.content.substring(0, 100)}...<br>
+        <em>Word Position:</em> ${occurrence.position}
       `;
       linkList.appendChild(li);
     });

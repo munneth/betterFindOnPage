@@ -5,10 +5,11 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 import re
-from crawler.crawler import getContent, findWord
-
 # Add the crawler directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'crawler'))
+
+# Import after adding to path
+from crawler import getContent, findWord
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -38,11 +39,11 @@ def get_words():
     url = request.args.get('url')
     searchword = request.args.get('searchword')
     content = getContent(url)
-    findWord(searchword, content)
+    occurrences = findWord(searchword, content)
     return jsonify({
         'url': url,
         'searchword': searchword,
-        'occurrences': []
+        'occurrences': occurrences
     })
 
 

@@ -37,6 +37,9 @@ def findWord(searchWord, content):
     for text_content in results:
         words = text_content.split()
         for index, word in enumerate(words):
+            # Skip None or empty words
+            if not word:
+                continue
             # If the content contains the search word twice or more this will fire for each occurence
             if word.lower() == searchWord.lower():
                 print('Whole content: "{0}"'.format(text_content))
