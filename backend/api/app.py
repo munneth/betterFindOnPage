@@ -43,7 +43,8 @@ def get_words():
     return jsonify({
         'url': url,
         'searchword': searchword,
-        'occurrences': occurrences
+        'occurrences': occurrences,
+        'total_occurrences': len(occurrences)
     })
 
 

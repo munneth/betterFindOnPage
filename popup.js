@@ -87,12 +87,12 @@ function displaySearchResults(data) {
 
   if (data.occurrences && data.occurrences.length > 0) {
     const title = document.createElement("h3");
-    title.textContent = `Found "${data.searchword}" ${data.total_occurrences} times:`;
+    title.textContent = `Found "${data.searchword}" ${data.total_occurrences} times`;
     linkList.appendChild(title);
 
     // Display array index information
     const indexInfo = document.createElement("p");
-    indexInfo.innerHTML = `<strong>Array indices: [${data.occurrences
+    indexInfo.innerHTML = `<strong> [${data.occurrences
       .map((_, i) => i)
       .join(", ")}]</strong>`;
     linkList.appendChild(indexInfo);
@@ -100,10 +100,12 @@ function displaySearchResults(data) {
     data.occurrences.forEach((occurrence, index) => {
       const li = document.createElement("li");
       li.innerHTML = `
-        <strong>Match ${index + 1} (Array Index: ${index}):</strong><br>
-        <em>Context:</em> ${occurrence.word_before || "START"} <strong>${
+        <strong>Match ${index + 1} :</strong><br>
+        <em>Context:</em> ${
+          occurrence.word_before || "START"
+        } <a href="#" onclick="highlightWord(${index})" style="color: blue; text-decoration: underline; font-weight: bold;">${
         data.searchword
-      }</strong> ${occurrence.word_after || "END"}<br>
+      }</a> ${occurrence.word_after || "END"}<br>
         <em>Content:</em> ${occurrence.content.substring(0, 100)}...<br>
         <em>Word Position:</em> ${occurrence.position}
       `;
@@ -112,4 +114,32 @@ function displaySearchResults(data) {
   } else {
     linkList.innerHTML = `<li>No occurrences of "${data.searchword}" found</li>`;
   }
+}
+
+// Function to handle word highlighting
+function highlightWord(index) {
+  console.log(`Clicked on word at index: ${index}`);
+
+  // Get the searchword from the input field
+  const searchword = document.getElementById("searchword").value;
+
+  // Send message to content script to highlight the word
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    chrome.tabs.sendMessage(
+      tab.id,
+      {
+        action: "highlightWord",
+        index: index,
+        searchword: searchword,
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.log("Could not send highlight message to content script");
+        } else {
+          console.log("Word highlighted successfully");
+        }
+      }
+    );
+  });
 }

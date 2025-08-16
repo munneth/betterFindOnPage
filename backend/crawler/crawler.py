@@ -35,6 +35,12 @@ def findWord(searchWord, content):
     word_occurrences = []  # Array to store results
     
     for text_content in results:
+        # Get the parent element that contains this text
+        parent_element = text_content.parent
+        
+        # Generate XPath for the parent element
+        xpath = get_xpath(parent_element)
+        
         words = text_content.split()
         for index, word in enumerate(words):
             # Skip None or empty words
@@ -43,6 +49,7 @@ def findWord(searchWord, content):
             # If the content contains the search word twice or more this will fire for each occurence
             if word.lower() == searchWord.lower():
                 print('Whole content: "{0}"'.format(text_content))
+                print('XPath: {0}'.format(xpath))
                 before = None
                 after = None
                 # Check if it's a first word
@@ -58,10 +65,52 @@ def findWord(searchWord, content):
                     'content': text_content,
                     'word_before': before,
                     'word_after': after,
-                    'position': index
+                    'position': index,
+                    'xpath': xpath
                 })
     
     return word_occurrences  # Return the array
+
+def get_xpath(element):
+    """Generate XPath for a BeautifulSoup element"""
+    if element is None:
+        return ""
+    
+    # If it's the root element
+    if element.name == '[document]':
+        return "/"
+    
+    # If it's the html element
+    if element.name == 'html':
+        return "/html"
+    
+    # If it's the body element
+    if element.name == 'body':
+        return "/html/body"
+    
+    # For other elements, build the path
+    path = []
+    current = element
+    
+    while current and current.name not in ['html', 'body', '[document]']:
+        # Get the tag name
+        tag_name = current.name if current.name else 'text()'
+        
+        # Count siblings with the same tag name
+        siblings = current.find_previous_siblings(tag_name)
+        position = len(siblings) + 1
+        
+        # Add position if there are multiple siblings
+        if position > 1:
+            path.append(f"{tag_name}[{position}]")
+        else:
+            path.append(tag_name)
+        
+        current = current.parent
+    
+    # Reverse the path and join
+    path.reverse()
+    return "/" + "/".join(path)
 
 
 content = getContent(URL)
