@@ -1,6 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import sys
+import requests
+from bs4 import BeautifulSoup
+import re
+from crawler.crawler import getContent, findWord
+
+# Add the crawler directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'crawler'))
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -24,29 +32,21 @@ def health():
         'service': 'flask-api'
     })
 
-@app.route('/api/links', methods=['GET'])
-def get_links():
-    """Get links endpoint"""
+@app.route('/api/words', methods=['GET'])
+def get_words():
+    """Get words endpoint"""
+    url = request.args.get('url')
+    searchword = request.args.get('searchword')
+    content = getContent(url)
+    findWord(searchword, content)
     return jsonify({
-        'links': [],
-        'count': 0
+        'url': url,
+        'searchword': searchword,
+        'words': []
     })
 
-@app.route('/api/links', methods=['POST'])
-def add_links():
-    """Add links endpoint"""
-    data = request.get_json()
-    
-    if not data or 'links' not in data:
-        return jsonify({'error': 'No links provided'}), 400
-    
-    # Process the links here
-    links = data['links']
-    
-    return jsonify({
-        'message': f'Processed {len(links)} links',
-        'links': links
-    })
+
+
 
 @app.errorhandler(404)
 def not_found(error):

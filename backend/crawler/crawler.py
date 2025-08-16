@@ -49,4 +49,5 @@ def findWord(searchWord, content):
                 print('\tWord before: "{0}", word after: "{1}"'.format(before, after))
 
 
-getContent(URL)
+content = getContent(URL)
+findWord("ought", content)
