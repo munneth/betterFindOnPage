@@ -38,6 +38,21 @@ document.getElementById("scrapeBtn").addEventListener("click", () => {
   });
 });
 
+function resetSearchButton(button, originalText) {
+  button.textContent = originalText;
+  button.disabled = false;
+}
+
+function showError(message) {
+  const resultsContainer = document.getElementById("resultsContainer");
+  const linkList = document.getElementById("linkList");
+  
+  if (resultsContainer && linkList) {
+    resultsContainer.style.display = "block";
+    linkList.innerHTML = `<div class="error">${message}</div>`;
+  }
+}
+
 function displayLinks(response) {
   const linkList = document.getElementById("linkList");
   linkList.innerHTML = "";
@@ -57,6 +72,12 @@ document.getElementById("searchBtn").addEventListener("click", () => {
     alert("Please enter a search word");
     return;
   }
+
+  // Show loading state
+  const searchBtn = document.getElementById("searchBtn");
+  const originalText = searchBtn.textContent;
+  searchBtn.textContent = "Searching...";
+  searchBtn.disabled = true;
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
@@ -83,8 +104,8 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                   (contentResponse) => {
                     if (chrome.runtime.lastError) {
                       console.error("Error:", chrome.runtime.lastError.message);
-                      document.getElementById("linkList").innerHTML =
-                        "<li>Error: Could not search page</li>";
+                      showError("Could not search page");
+                      resetSearchButton(searchBtn, originalText);
                       return;
                     }
                     
@@ -103,6 +124,7 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                           page_occurrences: contentResponse.results
                         };
                         displaySearchResults(mergedData);
+                        resetSearchButton(searchBtn, originalText);
                       })
                       .catch((error) => {
                         console.error("Error:", error);
@@ -121,9 +143,9 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                           };
                           displaySearchResults(pageData);
                         } else {
-                          document.getElementById("linkList").innerHTML =
-                            "<li>Error: Could not search</li>";
+                          showError("Could not search");
                         }
+                        resetSearchButton(searchBtn, originalText);
                       });
                   }
                 );
@@ -146,6 +168,7 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                 page_occurrences: contentResponse.results
               };
               displaySearchResults(mergedData);
+              resetSearchButton(searchBtn, originalText);
             })
             .catch((error) => {
               console.error("Error:", error);
@@ -164,9 +187,9 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                 };
                 displaySearchResults(pageData);
               } else {
-                document.getElementById("linkList").innerHTML =
-                  "<li>Error: Could not search</li>";
+                showError("Could not search");
               }
+              resetSearchButton(searchBtn, originalText);
             });
         }
       }
@@ -175,53 +198,146 @@ document.getElementById("searchBtn").addEventListener("click", () => {
 });
 
 function displaySearchResults(data) {
+  const resultsContainer = document.getElementById("resultsContainer");
   const linkList = document.getElementById("linkList");
+  const resultsTitle = document.getElementById("resultsTitle");
+  const crawlInfo = document.getElementById("crawlInfo");
+  
+  if (!resultsContainer || !linkList || !resultsTitle || !crawlInfo) {
+    console.error("Required DOM elements not found");
+    return;
+  }
+  
+  resultsContainer.style.display = "block";
   linkList.innerHTML = "";
 
   if (data.occurrences && data.occurrences.length > 0) {
-    const title = document.createElement("h3");
-    title.textContent = `Found "${data.searchword}" ${data.total_occurrences} times`;
-    linkList.appendChild(title);
+    resultsTitle.textContent = `Found "${data.searchword}" ${data.total_occurrences} times`;
 
-    // Display array index information
-    const indexInfo = document.createElement("p");
-    indexInfo.innerHTML = `<strong> [${data.occurrences
-      .map((_, i) => i)
-      .join(", ")}]</strong>`;
-    linkList.appendChild(indexInfo);
-
-
-
-    data.occurrences.forEach((occurrence, index) => {
-      const li = document.createElement("li");
-      li.style.marginBottom = "10px";
-      li.style.padding = "8px";
-      li.style.border = "1px solid #ddd";
-      li.style.borderRadius = "5px";
-      li.style.backgroundColor = "#f9f9f9";
-      
-      li.innerHTML = `
-        <strong>Match ${index + 1}:</strong><br>
-        <em>Context:</em> ${
-          occurrence.word_before || "START"
-        } <a href="#" class="highlight-link" data-index="${index}" style="color: #0066cc; text-decoration: underline; font-weight: bold; background-color: #e6f3ff; padding: 2px 4px; border-radius: 3px; cursor: pointer;">${
-        data.searchword
-      }</a> ${occurrence.word_after || "END"}<br>
-        <em>Content:</em> ${occurrence.content.substring(0, 100)}...<br>
-        <em>Word Position:</em> ${occurrence.position}
+    // Add crawl information if available
+    if (data.crawl_settings && data.crawl_settings.enabled) {
+      crawlInfo.innerHTML = `
+        <strong>Crawl Results:</strong> ${data.current_page_occurrences || 0} on current page, 
+        ${data.crawled_occurrences || 0} on linked pages (${data.crawled_urls ? data.crawled_urls.length : 0} pages crawled)
       `;
+    } else {
+      crawlInfo.innerHTML = "";
+    }
+
+    // Group results by source URL
+    const resultsByUrl = {};
+    data.occurrences.forEach((occurrence, index) => {
+      const sourceUrl = occurrence.source_url || data.url;
+      if (!resultsByUrl[sourceUrl]) {
+        resultsByUrl[sourceUrl] = [];
+      }
+      resultsByUrl[sourceUrl].push({ ...occurrence, originalIndex: index });
+    });
+
+    // Create dropdowns for each page
+    Object.keys(resultsByUrl).forEach((url, urlIndex) => {
+      const occurrences = resultsByUrl[url];
+      const isCurrentPage = url === data.url;
+      const pageIndicator = isCurrentPage ? "Current Page" : "Linked Page";
+      const pageClass = isCurrentPage ? "current-page" : "linked-page";
       
-      // Add event listener to the link
-      const link = li.querySelector('.highlight-link');
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        highlightWord(index);
+      // Create dropdown container
+      const dropdownContainer = document.createElement("div");
+      dropdownContainer.className = "dropdown-container";
+      
+      // Create dropdown header
+      const dropdownHeader = document.createElement("div");
+      dropdownHeader.className = "dropdown-header";
+      
+      const headerText = document.createElement("span");
+      headerText.textContent = `${pageIndicator} (${occurrences.length} results)`;
+      
+      const arrow = document.createElement("span");
+      arrow.className = "dropdown-arrow";
+      arrow.textContent = "▼";
+      
+      dropdownHeader.appendChild(headerText);
+      dropdownHeader.appendChild(arrow);
+      
+      // Create dropdown content
+      const dropdownContent = document.createElement("div");
+      dropdownContent.className = "dropdown-content";
+      
+      // Add results to dropdown
+      occurrences.forEach((occurrence, index) => {
+        const resultItem = document.createElement("div");
+        resultItem.className = "result-item";
+        
+        const resultHeader = document.createElement("div");
+        resultHeader.className = "result-header";
+        
+        const resultTitle = document.createElement("span");
+        resultTitle.className = "result-title";
+        resultTitle.textContent = `Match ${occurrence.originalIndex + 1}`;
+        
+        const pageIndicatorSpan = document.createElement("span");
+        pageIndicatorSpan.className = `page-indicator ${pageClass}`;
+        pageIndicatorSpan.textContent = pageIndicator;
+        
+        resultHeader.appendChild(resultTitle);
+        resultHeader.appendChild(pageIndicatorSpan);
+        
+        const resultContent = document.createElement("div");
+        resultContent.className = "result-content";
+        
+        const contextText = document.createElement("div");
+        contextText.innerHTML = `<strong>Context:</strong> ${
+          occurrence.word_before || "START"
+        } <span class="highlight-link" data-index="${occurrence.originalIndex}">${
+          data.searchword
+        }</span> ${occurrence.word_after || "END"}`;
+        
+        const contentText = document.createElement("div");
+        contentText.innerHTML = `<strong>Content:</strong> ${occurrence.content.substring(0, 100)}...`;
+        
+        const positionText = document.createElement("div");
+        positionText.innerHTML = `<strong>Position:</strong> ${occurrence.position}`;
+        
+        resultContent.appendChild(contextText);
+        resultContent.appendChild(contentText);
+        resultContent.appendChild(positionText);
+        
+        resultItem.appendChild(resultHeader);
+        resultItem.appendChild(resultContent);
+        
+        // Add click event for highlighting
+        const highlightLink = resultItem.querySelector('.highlight-link');
+        if (highlightLink) {
+          highlightLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            highlightWord(occurrence.originalIndex);
+          });
+        }
+        
+        dropdownContent.appendChild(resultItem);
       });
       
-      linkList.appendChild(li);
+      // Add click event to toggle dropdown
+      dropdownHeader.addEventListener('click', () => {
+        dropdownContent.classList.toggle('expanded');
+        const arrow = dropdownHeader.querySelector('.dropdown-arrow');
+        arrow.classList.toggle('expanded');
+      });
+      
+      // Auto-expand current page dropdown
+      if (isCurrentPage) {
+        dropdownContent.classList.add('expanded');
+        dropdownHeader.querySelector('.dropdown-arrow').classList.add('expanded');
+      }
+      
+      dropdownContainer.appendChild(dropdownHeader);
+      dropdownContainer.appendChild(dropdownContent);
+      linkList.appendChild(dropdownContainer);
     });
   } else {
-    linkList.innerHTML = `<li>No occurrences of "${data.searchword}" found</li>`;
+    resultsTitle.textContent = "No Results Found";
+    crawlInfo.innerHTML = "";
+    linkList.innerHTML = `<div class="loading">No occurrences of "${data.searchword}" found</div>`;
   }
 }
 
