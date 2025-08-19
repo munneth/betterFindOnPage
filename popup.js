@@ -109,11 +109,11 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                       return;
                     }
                     
-                    // Now call your Flask API for additional context
+                    // Now call your Flask API for additional context with intelligent crawling
                     fetch(
-                      `http://127.0.0.1:5000/api/words?url=${encodeURIComponent(
+                      `http://127.0.0.1:5000/api/words/advanced?url=${encodeURIComponent(
                         currentUrl
-                      )}&searchword=${encodeURIComponent(searchword)}`
+                      )}&searchword=${encodeURIComponent(searchword)}&crawl=true&max_depth=1&max_links=5`
                     )
                       .then((response) => response.json())
                       .then((data) => {
@@ -153,11 +153,11 @@ document.getElementById("searchBtn").addEventListener("click", () => {
             }
           );
         } else {
-          // Content script is available, proceed with API call
+          // Content script is available, proceed with API call with intelligent crawling
           fetch(
-            `http://127.0.0.1:5000/api/words?url=${encodeURIComponent(
+            `http://127.0.0.1:5000/api/words/advanced?url=${encodeURIComponent(
               currentUrl
-            )}&searchword=${encodeURIComponent(searchword)}`
+            )}&searchword=${encodeURIComponent(searchword)}&crawl=true&max_depth=1&max_links=5`
           )
             .then((response) => response.json())
             .then((data) => {

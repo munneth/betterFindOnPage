@@ -24,12 +24,9 @@ def getContent(url):
         print(f"Failed to retrieve {url} - Error: {str(e)}")
         return None
 
-def getRelevantLinks(content, base_url, max_links=5):
+def getRelevantLinks(content, base_url, searchword, max_links=5):
     """
-    Find the most relevant links on a page based on:
-    1. Internal links (same domain)
-    2. Link text relevance
-    3. Link frequency
+    Find the most relevant links on a page that are most likely to contain the search word
     """
     soup = BeautifulSoup(content, 'html.parser')
     links = []
@@ -52,8 +49,8 @@ def getRelevantLinks(content, base_url, max_links=5):
         
         # Only include internal links (same domain)
         if urlparse(absolute_url).netloc == urlparse(base_url).netloc:
-            # Calculate relevance score
-            relevance_score = calculateLinkRelevance(text, href)
+            # Calculate relevance score based on search word
+            relevance_score = calculateLinkRelevanceForWord(text, href, searchword)
             
             links.append({
                 'url': absolute_url,
@@ -95,6 +92,133 @@ def calculateLinkRelevance(link_text, href):
     
     return score
 
+def calculateLinkRelevanceForWord(link_text, href, searchword):
+    """
+    Calculate relevance score for a link based on likelihood of containing the search word
+    """
+    score = 0
+    searchword_lower = searchword.lower()
+    
+    # Direct match in link text (highest priority)
+    if searchword_lower in link_text.lower():
+        score += 100
+    
+    # Partial word match in link text
+    if any(word in link_text.lower() for word in searchword_lower.split()):
+        score += 50
+    
+    # Check for related terms and synonyms
+    related_terms = getRelatedTerms(searchword)
+    for term in related_terms:
+        if term.lower() in link_text.lower():
+            score += 30
+    
+    # Check for semantic similarity in link text
+    semantic_score = calculateSemanticSimilarity(link_text, searchword)
+    score += semantic_score
+    
+    # URL path relevance
+    url_score = calculateURLRelevance(href, searchword)
+    score += url_score
+    
+    # Link text quality indicators
+    if len(link_text) > 10:  # Longer, more descriptive links
+        score += 10
+    
+    # Penalty for very short or generic text
+    if len(link_text) < 3:
+        score -= 20
+    
+    # Bonus for descriptive keywords that suggest content
+    content_keywords = ['article', 'page', 'section', 'chapter', 'guide', 'tutorial', 
+                       'documentation', 'about', 'details', 'information', 'facts',
+                       'history', 'background', 'overview', 'summary', 'description']
+    for keyword in content_keywords:
+        if keyword.lower() in link_text.lower():
+            score += 5
+    
+    return score
+
+def getRelatedTerms(searchword):
+    """
+    Get related terms that might indicate content containing the search word
+    """
+    # Common word relationships and synonyms
+    word_relations = {
+        'dinosaur': ['fossil', 'prehistoric', 'extinct', 'paleontology', 'jurassic', 'cretaceous'],
+        'technology': ['software', 'hardware', 'computer', 'digital', 'electronic', 'programming'],
+        'science': ['research', 'study', 'experiment', 'theory', 'discovery', 'analysis'],
+        'history': ['past', 'ancient', 'historical', 'timeline', 'era', 'period'],
+        'medicine': ['health', 'medical', 'treatment', 'disease', 'symptoms', 'diagnosis'],
+        'business': ['company', 'industry', 'market', 'commerce', 'trade', 'economy'],
+        'education': ['learning', 'teaching', 'school', 'university', 'course', 'study'],
+        'art': ['painting', 'sculpture', 'creative', 'artist', 'gallery', 'museum'],
+        'sports': ['game', 'athletic', 'competition', 'team', 'player', 'championship'],
+        'music': ['song', 'artist', 'album', 'concert', 'performance', 'genre']
+    }
+    
+    # Check for exact matches
+    for category, terms in word_relations.items():
+        if searchword.lower() in category or category in searchword.lower():
+            return terms
+    
+    # Check for partial matches
+    for category, terms in word_relations.items():
+        if any(word in searchword.lower() for word in category.split()):
+            return terms
+    
+    # Return empty list if no matches found
+    return []
+
+def calculateSemanticSimilarity(link_text, searchword):
+    """
+    Calculate semantic similarity between link text and search word
+    """
+    score = 0
+    
+    # Simple word overlap scoring
+    link_words = set(link_text.lower().split())
+    search_words = set(searchword.lower().split())
+    
+    # Count overlapping words
+    overlap = len(link_words.intersection(search_words))
+    score += overlap * 15
+    
+    # Check for word stems (basic stemming)
+    for search_word in search_words:
+        for link_word in link_words:
+            # Check if words share common prefixes/suffixes
+            if (len(search_word) > 3 and len(link_word) > 3 and 
+                (search_word[:4] in link_word or link_word[:4] in search_word)):
+                score += 10
+    
+    return score
+
+def calculateURLRelevance(href, searchword):
+    """
+    Calculate relevance based on URL structure
+    """
+    score = 0
+    searchword_lower = searchword.lower()
+    
+    # Check if search word appears in URL path
+    if searchword_lower in href.lower():
+        score += 40
+    
+    # Check for word parts in URL
+    search_parts = searchword_lower.split()
+    for part in search_parts:
+        if len(part) > 2 and part in href.lower():
+            score += 15
+    
+    # Bonus for descriptive URL patterns
+    descriptive_patterns = ['/wiki/', '/article/', '/page/', '/content/', '/info/']
+    for pattern in descriptive_patterns:
+        if pattern in href.lower():
+            score += 5
+    
+    return score
+
 def crawlAndSearch(url, searchword, max_depth=1, max_links_per_page=5):
     """
     Crawl a page and its most relevant links to search for a word
@@ -126,7 +250,7 @@ def crawlAndSearch(url, searchword, max_depth=1, max_links_per_page=5):
         
         # If we haven't reached max depth, find and crawl relevant links
         if depth < max_depth:
-            relevant_links = getRelevantLinks(content, current_url, max_links_per_page)
+            relevant_links = getRelevantLinks(content, current_url, searchword, max_links_per_page)
             
             for link_info in relevant_links:
                 link_url = link_info['url']
