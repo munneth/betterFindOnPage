@@ -156,12 +156,25 @@ function highlightWordOnPage(index, searchword) {
 
   if (!currentSearchResults || !currentSearchResults.occurrences[index]) {
     console.error('No search results available for index:', index);
-    // Try alternative approach
-    highlightWordAlternative(index, searchword);
+    // Try alternative approach - search for the word again
+    console.log('Re-searching for word to get current results');
+    const newResults = searchWordsOnPage(searchword);
+    currentSearchResults = newResults;
+    
+    if (newResults.occurrences && newResults.occurrences[index]) {
+      // Now we have the results, proceed with highlighting
+      highlightSpecificWord(index, searchword, newResults.occurrences[index]);
+    } else {
+      // Still no results, use alternative method
+      highlightWordAlternative(index, searchword);
+    }
     return;
   }
 
-  const occurrence = currentSearchResults.occurrences[index];
+  highlightSpecificWord(index, searchword, currentSearchResults.occurrences[index]);
+}
+
+function highlightSpecificWord(index, searchword, occurrence) {
   const node = occurrence.node;
   const startOffset = occurrence.startOffset;
   const endOffset = occurrence.endOffset;

@@ -168,19 +168,26 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                 page_occurrences: contentResponse.results
               };
               
-              // If API didn't return occurrences, use content script results
-              if (!mergedData.occurrences || mergedData.occurrences.length === 0) {
-                console.log("No API results, using content script results");
-                mergedData.occurrences = contentResponse.results.occurrences.map((occ, index) => ({
-                  word_before: "",
-                  word_after: "",
-                  content: occ.text,
-                  position: occ.position,
-                  source_url: currentUrl
-                }));
-                mergedData.total_occurrences = contentResponse.results.total_occurrences;
-                mergedData.url = currentUrl;
-              }
+                             // If API didn't return occurrences, use content script results
+               if (!mergedData.occurrences || mergedData.occurrences.length === 0) {
+                 console.log("No API results, using content script results");
+                 mergedData.occurrences = contentResponse.results.occurrences.map((occ, index) => ({
+                   word_before: "",
+                   word_after: "",
+                   content: occ.text,
+                   position: occ.position,
+                   source_url: currentUrl
+                 }));
+                 mergedData.total_occurrences = contentResponse.results.total_occurrences;
+                 mergedData.url = currentUrl;
+               } else {
+                 // API returned results, ensure all occurrences have source_url
+                 mergedData.occurrences.forEach(occ => {
+                   if (!occ.source_url) {
+                     occ.source_url = currentUrl;
+                   }
+                 });
+               }
               
               displaySearchResults(mergedData);
               resetSearchButton(searchBtn, originalText);
@@ -245,15 +252,18 @@ function displaySearchResults(data) {
       crawlInfo.innerHTML = "";
     }
 
-    // Group results by source URL
-    const resultsByUrl = {};
-    data.occurrences.forEach((occurrence, index) => {
-      const sourceUrl = occurrence.source_url || data.url;
-      if (!resultsByUrl[sourceUrl]) {
-        resultsByUrl[sourceUrl] = [];
-      }
-      resultsByUrl[sourceUrl].push({ ...occurrence, originalIndex: index });
-    });
+         // Group results by source URL
+     const resultsByUrl = {};
+     console.log('Grouping occurrences by URL:', data.occurrences);
+     data.occurrences.forEach((occurrence, index) => {
+       const sourceUrl = occurrence.source_url || data.url;
+       console.log(`Occurrence ${index}: source_url = ${occurrence.source_url}, fallback = ${data.url}`);
+       if (!resultsByUrl[sourceUrl]) {
+         resultsByUrl[sourceUrl] = [];
+       }
+       resultsByUrl[sourceUrl].push({ ...occurrence, originalIndex: index });
+     });
+     console.log('Grouped results:', resultsByUrl);
 
     // Create dropdowns for each page
     Object.keys(resultsByUrl).forEach((url, urlIndex) => {
@@ -306,50 +316,63 @@ function displaySearchResults(data) {
            pageIndicatorSpan.style.textDecoration = 'underline';
            pageIndicatorSpan.title = 'Click to open in new tab';
            
-           pageIndicatorSpan.addEventListener('click', (e) => {
-             e.preventDefault();
-             e.stopPropagation();
-             
-             // Open the linked page in a new tab
-             chrome.tabs.create({
-               url: occurrence.source_url,
-               active: false
-             }, (newTab) => {
-               // Wait for the page to load, then search for the word
-               chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo, tab) {
-                 if (tabId === newTab.id && changeInfo.status === 'complete') {
-                   // Remove the listener
-                   chrome.tabs.onUpdated.removeListener(listener);
-                   
-                   // Inject content script and search for the word
-                   chrome.scripting.executeScript({
-                     target: { tabId: newTab.id },
-                     files: ["content.js"]
-                   }, () => {
-                     setTimeout(() => {
-                       // Send search message to find the word
-                       chrome.tabs.sendMessage(newTab.id, {
-                         action: "searchWords",
-                         searchword: data.searchword
-                       }, (response) => {
-                         if (response && response.results && response.results.occurrences.length > 0) {
-                           // Highlight the first occurrence
-                           chrome.tabs.sendMessage(newTab.id, {
-                             action: "highlightWord",
-                             index: 0,
-                             searchword: data.searchword
-                           });
-                           
-                           // Activate the new tab
-                           chrome.tabs.update(newTab.id, { active: true });
-                         }
-                       });
-                     }, 500);
-                   });
-                 }
-               });
-             });
-           });
+                       pageIndicatorSpan.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              console.log('Opening linked page:', occurrence.source_url);
+              
+              // Open the linked page in a new tab
+              chrome.tabs.create({
+                url: occurrence.source_url,
+                active: false
+              }, (newTab) => {
+                console.log('Created new tab:', newTab.id);
+                
+                // Wait for the page to load, then search for the word
+                chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo, tab) {
+                  if (tabId === newTab.id && changeInfo.status === 'complete') {
+                    console.log('Page loaded, searching for word:', data.searchword);
+                    
+                    // Remove the listener
+                    chrome.tabs.onUpdated.removeListener(listener);
+                    
+                    // Inject content script and search for the word
+                    chrome.scripting.executeScript({
+                      target: { tabId: newTab.id },
+                      files: ["content.js"]
+                    }, () => {
+                      console.log('Content script injected');
+                      setTimeout(() => {
+                        // Send search message to find the word
+                        chrome.tabs.sendMessage(newTab.id, {
+                          action: "searchWords",
+                          searchword: data.searchword
+                        }, (response) => {
+                          console.log('Search response:', response);
+                          if (response && response.results && response.results.occurrences.length > 0) {
+                            console.log('Found occurrences, highlighting first one');
+                            // Highlight the first occurrence
+                            chrome.tabs.sendMessage(newTab.id, {
+                              action: "highlightWord",
+                              index: 0,
+                              searchword: data.searchword
+                            });
+                            
+                            // Activate the new tab
+                            chrome.tabs.update(newTab.id, { active: true });
+                          } else {
+                            console.log('No occurrences found on linked page');
+                            // Still activate the tab even if no results
+                            chrome.tabs.update(newTab.id, { active: true });
+                          }
+                        });
+                      }, 1000); // Increased timeout
+                    });
+                  }
+                });
+              });
+            });
          }
          
          resultHeader.appendChild(resultTitle);
