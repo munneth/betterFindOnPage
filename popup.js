@@ -111,7 +111,7 @@ document.getElementById("searchBtn").addEventListener("click", () => {
                     
                     // Now call your Flask API for additional context with intelligent crawling
                     fetch(
-                      `http://127.0.0.1:5000/api/words/advanced?url=${encodeURIComponent(
+                      `https://munneth52.pythonanywhere.com/api/words/advanced?url=${encodeURIComponent(
                         currentUrl
                       )}&searchword=${encodeURIComponent(searchword)}&crawl=true&max_depth=1&max_links=5`
                     )
@@ -155,7 +155,7 @@ document.getElementById("searchBtn").addEventListener("click", () => {
         } else {
           // Content script is available, proceed with API call with intelligent crawling
           fetch(
-            `http://127.0.0.1:5000/api/words/advanced?url=${encodeURIComponent(
+            `https://munneth52.pythonanywhere.com/api/words/advanced?url=${encodeURIComponent(
               currentUrl
             )}&searchword=${encodeURIComponent(searchword)}&crawl=true&max_depth=1&max_links=5`
           )
