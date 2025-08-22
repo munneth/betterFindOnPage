@@ -161,10 +161,12 @@ function highlightWordOnPage(index, searchword) {
     const newResults = searchWordsOnPage(searchword);
     currentSearchResults = newResults;
     
-    if (newResults.occurrences && newResults.occurrences[index]) {
+    if (newResults.occurrences && newResults.occurrences.length > index) {
       // Now we have the results, proceed with highlighting
+      console.log(`Found ${newResults.occurrences.length} occurrences, highlighting index ${index}`);
       highlightSpecificWord(index, searchword, newResults.occurrences[index]);
     } else {
+      console.log(`Re-search found ${newResults.occurrences ? newResults.occurrences.length : 0} occurrences, but need index ${index}`);
       // Still no results, use alternative method
       highlightWordAlternative(index, searchword);
     }
@@ -247,7 +249,7 @@ function highlightSpecificWord(index, searchword, occurrence) {
 }
 
 function highlightWordAlternative(index, searchword) {
-  console.log('Using alternative highlighting method');
+  console.log('Using alternative highlighting method for index:', index);
   
   // Find all text nodes containing the search word
   const textNodes = [];
@@ -265,8 +267,11 @@ function highlightWordAlternative(index, searchword) {
     }
   }
   
+  console.log(`Alternative method found ${textNodes.length} text nodes containing "${searchword}"`);
+  
   if (textNodes[index]) {
     const targetNode = textNodes[index];
+    console.log(`Highlighting text node ${index}:`, targetNode.textContent.substring(0, 50) + '...');
     
     // Create a temporary highlight
     const tempHighlight = document.createElement('span');
@@ -305,6 +310,41 @@ function highlightWordAlternative(index, searchword) {
       tempHighlight.style.backgroundColor = '#ffff00';
       tempHighlight.style.boxShadow = '0 0 5px rgba(255, 255, 0, 0.5)';
     }, 300);
+  } else {
+    console.error(`Alternative method failed: found ${textNodes.length} text nodes but need index ${index}`);
+    // Last resort: try to find any occurrence and highlight it
+    if (textNodes.length > 0) {
+      console.log('Highlighting first available text node as fallback');
+      const targetNode = textNodes[0];
+      
+      // Create a temporary highlight
+      const tempHighlight = document.createElement('span');
+      tempHighlight.style.backgroundColor = '#ff6b6b';
+      tempHighlight.style.color = '#ffffff';
+      tempHighlight.style.padding = '2px';
+      tempHighlight.style.borderRadius = '3px';
+      tempHighlight.style.boxShadow = '0 0 5px rgba(255, 107, 107, 0.5)';
+      tempHighlight.style.position = 'relative';
+      tempHighlight.style.zIndex = '1000';
+      tempHighlight.id = 'betterFind-highlight-fallback';
+      tempHighlight.title = `Fallback highlight (wanted index ${index}, found ${textNodes.length} nodes)`;
+      
+      // Wrap the text node
+      const parent = targetNode.parentNode;
+      const wrapper = document.createElement('span');
+      wrapper.appendChild(tempHighlight);
+      tempHighlight.appendChild(targetNode.cloneNode(true));
+      parent.replaceChild(wrapper, targetNode);
+      
+      highlightedElements.push(tempHighlight);
+      
+      // Scroll to the element
+      tempHighlight.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center'
+      });
+    }
   }
 }
 
