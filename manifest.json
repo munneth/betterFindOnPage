@@ -4,6 +4,7 @@
   "version": "1.0",
   "description": "Enhanced find functionality with intelligent crawling.",
   "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
