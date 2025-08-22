@@ -161,12 +161,27 @@ document.getElementById("searchBtn").addEventListener("click", () => {
           )
             .then((response) => response.json())
             .then((data) => {
-              console.log("Works");
+              console.log("API response:", data);
               // Merge content script results with API results
               const mergedData = {
                 ...data,
                 page_occurrences: contentResponse.results
               };
+              
+              // If API didn't return occurrences, use content script results
+              if (!mergedData.occurrences || mergedData.occurrences.length === 0) {
+                console.log("No API results, using content script results");
+                mergedData.occurrences = contentResponse.results.occurrences.map((occ, index) => ({
+                  word_before: "",
+                  word_after: "",
+                  content: occ.text,
+                  position: occ.position,
+                  source_url: currentUrl
+                }));
+                mergedData.total_occurrences = contentResponse.results.total_occurrences;
+                mergedData.url = currentUrl;
+              }
+              
               displaySearchResults(mergedData);
               resetSearchButton(searchBtn, originalText);
             })
@@ -174,16 +189,19 @@ document.getElementById("searchBtn").addEventListener("click", () => {
               console.error("Error:", error);
               // If API fails, still show page results
               if (contentResponse && contentResponse.results) {
+                console.log("API failed, using content script results");
                 const pageData = {
                   searchword: searchword,
                   occurrences: contentResponse.results.occurrences.map((occ, index) => ({
                     word_before: "",
                     word_after: "",
                     content: occ.text,
-                    position: occ.position
+                    position: occ.position,
+                    source_url: currentUrl
                   })),
                   total_occurrences: contentResponse.results.total_occurrences,
-                  page_occurrences: contentResponse.results
+                  page_occurrences: contentResponse.results,
+                  url: currentUrl
                 };
                 displaySearchResults(pageData);
               } else {
@@ -198,6 +216,8 @@ document.getElementById("searchBtn").addEventListener("click", () => {
 });
 
 function displaySearchResults(data) {
+  console.log("Displaying search results:", data);
+  
   const resultsContainer = document.getElementById("resultsContainer");
   const linkList = document.getElementById("linkList");
   const resultsTitle = document.getElementById("resultsTitle");
@@ -212,6 +232,7 @@ function displaySearchResults(data) {
   linkList.innerHTML = "";
 
   if (data.occurrences && data.occurrences.length > 0) {
+    console.log(`Found ${data.occurrences.length} occurrences to display`);
     resultsTitle.textContent = `Found "${data.searchword}" ${data.total_occurrences} times`;
 
     // Add crawl information if available
@@ -275,12 +296,64 @@ function displaySearchResults(data) {
         resultTitle.className = "result-title";
         resultTitle.textContent = `Match ${occurrence.originalIndex + 1}`;
         
-        const pageIndicatorSpan = document.createElement("span");
-        pageIndicatorSpan.className = `page-indicator ${pageClass}`;
-        pageIndicatorSpan.textContent = pageIndicator;
-        
-        resultHeader.appendChild(resultTitle);
-        resultHeader.appendChild(pageIndicatorSpan);
+                 const pageIndicatorSpan = document.createElement("span");
+         pageIndicatorSpan.className = `page-indicator ${pageClass}`;
+         pageIndicatorSpan.textContent = pageIndicator;
+         
+         // Make linked page results clickable to open in new tab
+         if (!isCurrentPage && occurrence.source_url) {
+           pageIndicatorSpan.style.cursor = 'pointer';
+           pageIndicatorSpan.style.textDecoration = 'underline';
+           pageIndicatorSpan.title = 'Click to open in new tab';
+           
+           pageIndicatorSpan.addEventListener('click', (e) => {
+             e.preventDefault();
+             e.stopPropagation();
+             
+             // Open the linked page in a new tab
+             chrome.tabs.create({
+               url: occurrence.source_url,
+               active: false
+             }, (newTab) => {
+               // Wait for the page to load, then search for the word
+               chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo, tab) {
+                 if (tabId === newTab.id && changeInfo.status === 'complete') {
+                   // Remove the listener
+                   chrome.tabs.onUpdated.removeListener(listener);
+                   
+                   // Inject content script and search for the word
+                   chrome.scripting.executeScript({
+                     target: { tabId: newTab.id },
+                     files: ["content.js"]
+                   }, () => {
+                     setTimeout(() => {
+                       // Send search message to find the word
+                       chrome.tabs.sendMessage(newTab.id, {
+                         action: "searchWords",
+                         searchword: data.searchword
+                       }, (response) => {
+                         if (response && response.results && response.results.occurrences.length > 0) {
+                           // Highlight the first occurrence
+                           chrome.tabs.sendMessage(newTab.id, {
+                             action: "highlightWord",
+                             index: 0,
+                             searchword: data.searchword
+                           });
+                           
+                           // Activate the new tab
+                           chrome.tabs.update(newTab.id, { active: true });
+                         }
+                       });
+                     }, 500);
+                   });
+                 }
+               });
+             });
+           });
+         }
+         
+         resultHeader.appendChild(resultTitle);
+         resultHeader.appendChild(pageIndicatorSpan);
         
         const resultContent = document.createElement("div");
         resultContent.className = "result-content";
@@ -335,6 +408,7 @@ function displaySearchResults(data) {
       linkList.appendChild(dropdownContainer);
     });
   } else {
+    console.log("No occurrences found in data:", data);
     resultsTitle.textContent = "No Results Found";
     crawlInfo.innerHTML = "";
     linkList.innerHTML = `<div class="loading">No occurrences of "${data.searchword}" found</div>`;

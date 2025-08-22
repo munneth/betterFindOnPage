@@ -2,7 +2,12 @@
 let currentSearchResults = null;
 let highlightedElements = [];
 
+// Test if content script is loaded
+console.log('Better Find on Page content script loaded on:', window.location.href);
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Content script received message:', request.action);
+  
   if (request.action === "scrape") {
     const links = Array.from(document.querySelectorAll("a")).map((a) => a.href);
     sendResponse({ links: links });
@@ -10,17 +15,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     highlightWordOnPage(request.index, request.searchword);
     sendResponse({ success: true });
   } else if (request.action === "searchWords") {
+    console.log('Searching for:', request.searchword);
     const results = searchWordsOnPage(request.searchword);
     currentSearchResults = results;
+    console.log('Search results:', results);
     sendResponse({ results: results });
   }
 });
 
 function searchWordsOnPage(searchword) {
+  console.log('Starting search for:', searchword);
+  
+  // Enhanced search that handles complex DOM structures better
   const walker = document.createTreeWalker(
     document.body,
     NodeFilter.SHOW_TEXT,
-    null,
+    {
+      acceptNode: function(node) {
+        // Skip script and style elements
+        const parent = node.parentElement;
+        if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
+        // Skip hidden elements
+        if (parent && (parent.style.display === 'none' || parent.style.visibility === 'hidden')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
+        // Only accept nodes with actual text content
+        if (node.textContent.trim().length === 0) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    },
     false
   );
 
@@ -29,7 +59,9 @@ function searchWordsOnPage(searchword) {
   let position = 0;
 
   while (node = walker.nextNode()) {
-    const text = node.textContent;
+    const text = node.textContent.trim();
+    if (text.length === 0) continue;
+    
     const regex = new RegExp(searchword, 'gi');
     let match;
 
@@ -44,11 +76,76 @@ function searchWordsOnPage(searchword) {
     }
   }
 
+  console.log(`Found ${occurrences.length} occurrences of "${searchword}" on page`);
+  
+  // If no occurrences found with TreeWalker, try alternative method
+  if (occurrences.length === 0) {
+    console.log('No occurrences found with TreeWalker, trying alternative method...');
+    return searchWordsAlternative(searchword);
+  }
+  
   return {
     searchword: searchword,
     occurrences: occurrences,
     total_occurrences: occurrences.length
   };
+}
+
+function searchWordsAlternative(searchword) {
+  console.log('Using alternative search method');
+  
+  // Get all text content from the page
+  const pageText = document.body.innerText || document.body.textContent || '';
+  console.log('Page text length:', pageText.length);
+  
+  const occurrences = [];
+  let position = 0;
+  
+  // Use a more robust regex that handles word boundaries
+  const regex = new RegExp(`\\b${searchword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+  let match;
+  
+  while ((match = regex.exec(pageText)) !== null) {
+    // Find the corresponding DOM element
+    const element = findElementContainingText(searchword);
+    
+    if (element) {
+      occurrences.push({
+        node: element.firstChild || element,
+        startOffset: 0,
+        endOffset: searchword.length,
+        position: position++,
+        text: match[0]
+      });
+    }
+  }
+  
+  console.log(`Alternative method found ${occurrences.length} occurrences`);
+  
+  return {
+    searchword: searchword,
+    occurrences: occurrences,
+    total_occurrences: occurrences.length
+  };
+}
+
+function findElementContainingText(searchword) {
+  // This is a simplified version - in practice, you'd need more sophisticated text mapping
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  );
+  
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.textContent.includes(searchword)) {
+      return node.parentElement;
+    }
+  }
+  
+  return null;
 }
 
 function highlightWordOnPage(index, searchword) {

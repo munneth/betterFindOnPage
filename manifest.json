@@ -1,9 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Link Scraper",
+  "name": "Better Find on Page",
   "version": "1.0",
-  "description": "Scrapes all <a> tags from a webpage.",
-  "permissions": ["activeTab", "scripting"],
+  "description": "Enhanced find functionality with intelligent crawling.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
   "action": {
     "default_popup": "popup.html"
   }
