@@ -5,20 +5,52 @@ let searchOverlay = null;
 let shortcutEnabled = false;
 let keyboardListener = null;
 
+// Global dropdown toggle function - defined early so it's available
+function toggleDropdown(dropdownId) {
+  const content = document.getElementById(dropdownId);
+  const arrow = document.getElementById(`arrow-${dropdownId}`);
+  
+  if (content.style.display === 'none' || content.style.display === '') {
+    content.style.display = 'block';
+    arrow.style.transform = 'rotate(180deg)';
+  } else {
+    content.style.display = 'none';
+    arrow.style.transform = 'rotate(0deg)';
+  }
+}
+
+// Global linked page click handler - defined early so it's available
+function handleLinkedPageClick(dropdownId, url, searchword) {
+  // First toggle the dropdown to show results
+  toggleDropdown(dropdownId);
+  
+  // Then open the linked page in a new tab
+  window.postMessage({
+    type: 'betterFind-open-linked-page', 
+    url: url, 
+    searchword: searchword
+  }, '*');
+}
+
+// Make functions globally available
+window.toggleDropdown = toggleDropdown;
+window.handleLinkedPageClick = handleLinkedPageClick;
+
 // Test if content script is loaded
 console.log('Better Find on Page content script loaded on:', window.location.href);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Content script received message:', request.action);
+  console.log('Content script received message:', request.action, 'on page:', window.location.href);
   
   if (request.action === "scrape") {
     const links = Array.from(document.querySelectorAll("a")).map((a) => a.href);
     sendResponse({ links: links });
   } else if (request.action === "highlightWord") {
+    console.log('Highlighting word at index:', request.index, 'for searchword:', request.searchword);
     highlightWordOnPage(request.index, request.searchword);
     sendResponse({ success: true });
   } else if (request.action === "searchWords") {
-    console.log('Searching for:', request.searchword);
+    console.log('Searching for:', request.searchword, 'on page:', window.location.href);
     const results = searchWordsOnPage(request.searchword);
     currentSearchResults = results;
     console.log('Search results:', results);
@@ -166,7 +198,7 @@ function findElementContainingText(searchword) {
 }
 
 function highlightWordOnPage(index, searchword) {
-  console.log('Highlighting word at index:', index);
+  console.log('Highlighting word at index:', index, 'for searchword:', searchword);
   
   // Clear previous highlights
   clearHighlights();
@@ -558,12 +590,74 @@ function performSearch() {
   const resultsContainer = document.getElementById('betterFind-results');
   resultsContainer.innerHTML = '<div style="text-align: center; color: #666;">Searching...</div>';
 
-  // Perform the search
-  const results = searchWordsOnPage(searchword);
-  currentSearchResults = results;
-  
-  // Display results
-  displayOverlayResults(results, resultsContainer);
+  // Get current page URL
+  const currentUrl = window.location.href;
+
+  // First, get page occurrences
+  const pageResults = searchWordsOnPage(searchword);
+  currentSearchResults = pageResults;
+
+  // Now call the Flask API for additional context with intelligent crawling
+  fetch(
+    `https://munneth52.pythonanywhere.com/api/words/advanced?url=${encodeURIComponent(
+      currentUrl
+    )}&searchword=${encodeURIComponent(searchword)}&crawl=true&max_depth=1&max_links=5`
+  )
+    .then((response) => response.json())
+    .then((data) => {
+      console.log("API response:", data);
+      // Merge content script results with API results
+      const mergedData = {
+        ...data,
+        page_occurrences: pageResults
+      };
+      
+      // If API didn't return occurrences, use content script results
+      if (!mergedData.occurrences || mergedData.occurrences.length === 0) {
+        console.log("No API results, using content script results");
+        mergedData.occurrences = pageResults.occurrences.map((occ, index) => ({
+          word_before: "",
+          word_after: "",
+          content: occ.text,
+          position: occ.position,
+          source_url: currentUrl
+        }));
+        mergedData.total_occurrences = pageResults.total_occurrences;
+        mergedData.url = currentUrl;
+      } else {
+        // API returned results, ensure all occurrences have source_url
+        mergedData.occurrences.forEach(occ => {
+          if (!occ.source_url) {
+            occ.source_url = currentUrl;
+          }
+        });
+      }
+      
+      displayOverlayResults(mergedData, resultsContainer);
+    })
+    .catch((error) => {
+      console.error("Error:", error);
+      // If API fails, still show page results
+      if (pageResults && pageResults.occurrences) {
+        console.log("API failed, using content script results");
+        const pageData = {
+          searchword: searchword,
+          occurrences: pageResults.occurrences.map((occ, index) => ({
+            word_before: "",
+            word_after: "",
+            content: occ.text,
+            position: occ.position,
+            source_url: currentUrl
+          })),
+          total_occurrences: pageResults.total_occurrences,
+          page_occurrences: pageResults,
+          url: currentUrl
+        };
+        displayOverlayResults(pageData, resultsContainer);
+      } else {
+        resultsContainer.innerHTML = '<div style="text-align: center; color: #666;">No results found</div>';
+      }
+    });
 }
 
 function displayOverlayResults(results, container) {
@@ -579,23 +673,170 @@ function displayOverlayResults(results, container) {
     </div>
   `;
 
-  results.occurrences.forEach((occurrence, index) => {
+  // Add crawl information if available
+  if (results.crawl_settings && results.crawl_settings.enabled) {
     html += `
-      <div style="margin-bottom: 12px; padding: 12px; border: 1px solid #eee; border-radius: 4px; cursor: pointer;" 
-           onclick="window.postMessage({type: 'betterFind-highlight', index: ${index}, searchword: '${searchword}'}, '*')">
-        <div style="font-weight: 600; margin-bottom: 4px;">Match ${index + 1}</div>
-        <div style="font-size: 12px; color: #666;">Position: ${occurrence.position}</div>
-        <div style="font-size: 12px; margin-top: 4px;">${occurrence.text}</div>
+      <div style="margin-bottom: 12px; padding: 8px; background: #e3f2fd; border-radius: 4px; font-size: 11px; color: #1976d2;">
+        <strong>Crawl Results:</strong> ${results.current_page_occurrences || 0} on current page, 
+        ${results.crawled_occurrences || 0} on linked pages (${results.crawled_urls ? results.crawled_urls.length : 0} pages crawled)
       </div>
     `;
+  }
+
+  // Group results by source URL
+  const resultsByUrl = {};
+  results.occurrences.forEach((occurrence, index) => {
+    const sourceUrl = occurrence.source_url || results.url;
+    if (!resultsByUrl[sourceUrl]) {
+      resultsByUrl[sourceUrl] = [];
+    }
+    resultsByUrl[sourceUrl].push({ ...occurrence, originalIndex: index });
+  });
+
+  // Create collapsible sections for each page
+  Object.keys(resultsByUrl).forEach((url, urlIndex) => {
+    const occurrences = resultsByUrl[url];
+    const isCurrentPage = url === results.url;
+    const pageIndicator = isCurrentPage ? "Current Page" : "Linked Page";
+    const dropdownId = `dropdown-${urlIndex}`;
+    
+         // Create dropdown header
+     if (isCurrentPage) {
+       html += `
+         <div class="dropdown-header" data-dropdown-id="${dropdownId}" data-action="toggle" style="
+           margin-bottom: 8px; 
+           padding: 10px 12px; 
+           background: #d4edda; 
+           border-radius: 4px; 
+           font-size: 12px; 
+           font-weight: 600; 
+           color: #155724;
+           cursor: pointer;
+           display: flex;
+           justify-content: space-between;
+           align-items: center;
+           border: 1px solid #c3e6cb;
+           transition: background-color 0.2s;
+         ">
+           <span>${pageIndicator} (${occurrences.length} results)</span>
+           <span class="dropdown-arrow" id="arrow-${dropdownId}" style="font-size: 14px; transition: transform 0.2s;">▼</span>
+         </div>
+       `;
+     } else {
+       html += `
+         <div class="dropdown-header" data-dropdown-id="${dropdownId}" data-action="linked-page" data-url="${url}" data-searchword="${searchword}" style="
+           margin-bottom: 8px; 
+           padding: 10px 12px; 
+           background: #fff3cd; 
+           border-radius: 4px; 
+           font-size: 12px; 
+           font-weight: 600; 
+           color: #856404;
+           cursor: pointer;
+           display: flex;
+           justify-content: space-between;
+           align-items: center;
+           border: 1px solid #ffeaa7;
+           transition: background-color 0.2s;
+         ">
+           <span>${pageIndicator} (${occurrences.length} results) - Click to open page</span>
+           <span class="dropdown-arrow" id="arrow-${dropdownId}" style="font-size: 14px; transition: transform 0.2s;">▼</span>
+         </div>
+       `;
+     }
+    
+    // Create dropdown content container
+    html += `
+      <div id="${dropdownId}" class="dropdown-content" style="
+        display: none;
+        margin-bottom: 12px;
+        padding: 8px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        border: 1px solid #e9ecef;
+        max-height: 300px;
+        overflow-y: auto;
+      ">
+    `;
+    
+    // Results for this page
+    occurrences.forEach((occurrence, index) => {
+      const context = occurrence.word_before || "START";
+      const afterContext = occurrence.word_after || "END";
+      
+      html += `
+        <div style="margin-bottom: 8px; padding: 10px; border: 1px solid #eee; border-radius: 4px; cursor: pointer; background: white; transition: background-color 0.2s;" 
+             onclick="window.postMessage({type: 'betterFind-highlight', index: ${occurrence.originalIndex}, searchword: '${searchword}'}, '*')"
+             onmouseover="this.style.background='#f8f9fa'" 
+             onmouseout="this.style.background='white'">
+          <div style="font-weight: 600; margin-bottom: 4px; font-size: 12px;">Match ${occurrence.originalIndex + 1}</div>
+          <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Position: ${occurrence.position}</div>
+          <div style="font-size: 11px; margin-bottom: 4px;">
+            <strong>Context:</strong> ${context} <span style="background: #ffff00; padding: 1px 2px; border-radius: 2px;">${searchword}</span> ${afterContext}
+          </div>
+          <div style="font-size: 11px; color: #666;">
+            <strong>Content:</strong> ${occurrence.content ? occurrence.content.substring(0, 80) + '...' : occurrence.text}
+          </div>
+        </div>
+      `;
+    });
+    
+    // Close dropdown content
+    html += `</div>`;
   });
 
   container.innerHTML = html;
+  
+  // Add event listeners for dropdown functionality
+  const dropdownHeaders = container.querySelectorAll('.dropdown-header');
+  dropdownHeaders.forEach(header => {
+    const action = header.getAttribute('data-action');
+    const dropdownId = header.getAttribute('data-dropdown-id');
+    
+    // Add hover effects
+    if (action === 'toggle') {
+      header.addEventListener('mouseover', () => {
+        header.style.background = '#c3e6cb';
+      });
+      header.addEventListener('mouseout', () => {
+        header.style.background = '#d4edda';
+      });
+    } else if (action === 'linked-page') {
+      header.addEventListener('mouseover', () => {
+        header.style.background = '#ffeaa7';
+      });
+      header.addEventListener('mouseout', () => {
+        header.style.background = '#fff3cd';
+      });
+    }
+    
+    // Add click handlers
+    header.addEventListener('click', () => {
+      if (action === 'toggle') {
+        toggleDropdown(dropdownId);
+      } else if (action === 'linked-page') {
+        const url = header.getAttribute('data-url');
+        const searchword = header.getAttribute('data-searchword');
+        handleLinkedPageClick(dropdownId, url, searchword);
+      }
+    });
+  });
 }
 
 // Listen for highlight messages from the overlay
 window.addEventListener('message', (event) => {
   if (event.data.type === 'betterFind-highlight') {
     highlightWordOnPage(event.data.index, event.data.searchword);
+  } else if (event.data.type === 'betterFind-open-linked-page') {
+    openLinkedPage(event.data.url, event.data.searchword);
   }
 });
+
+function openLinkedPage(url, searchword) {
+  // Open the linked page in a new tab
+  chrome.runtime.sendMessage({
+    action: "openLinkedPage",
+    url: url,
+    searchword: searchword
+  });
+}
