@@ -1,6 +1,9 @@
 // Store the current search results for highlighting
 let currentSearchResults = null;
 let highlightedElements = [];
+let searchOverlay = null;
+let shortcutEnabled = false;
+let keyboardListener = null;
 
 // Test if content script is loaded
 console.log('Better Find on Page content script loaded on:', window.location.href);
@@ -20,6 +23,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     currentSearchResults = results;
     console.log('Search results:', results);
     sendResponse({ results: results });
+  } else if (request.action === "toggleShortcut") {
+    shortcutEnabled = request.enabled;
+    if (shortcutEnabled) {
+      enableKeyboardShortcut();
+    } else {
+      disableKeyboardShortcut();
+    }
+    sendResponse({ success: true });
+  } else if (request.action === "createSearchOverlay") {
+    createSearchOverlay();
+    sendResponse({ success: true });
+  } else if (request.action === "hideSearchOverlay") {
+    hideSearchOverlay();
+    sendResponse({ success: true });
   }
 });
 
@@ -364,3 +381,221 @@ function clearHighlights() {
   });
   highlightedElements = [];
 }
+
+// Keyboard shortcut functions
+function enableKeyboardShortcut() {
+  if (keyboardListener) {
+    disableKeyboardShortcut();
+  }
+  
+  keyboardListener = (event) => {
+    // Check for Ctrl+F (or Cmd+F on Mac)
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Create the search overlay
+      createSearchOverlay();
+      
+      // Focus on the search input
+      setTimeout(() => {
+        const searchInput = document.getElementById('betterFind-search-input');
+        if (searchInput) {
+          searchInput.focus();
+        }
+      }, 100);
+    }
+  };
+  
+  document.addEventListener('keydown', keyboardListener, true);
+  console.log('Keyboard shortcut enabled (Ctrl+F)');
+}
+
+function disableKeyboardShortcut() {
+  if (keyboardListener) {
+    document.removeEventListener('keydown', keyboardListener, true);
+    keyboardListener = null;
+    console.log('Keyboard shortcut disabled');
+  }
+}
+
+// Initialize shortcut state on page load
+chrome.storage.sync.get(['shortcutEnabled'], (result) => {
+  shortcutEnabled = result.shortcutEnabled || false;
+  if (shortcutEnabled) {
+    enableKeyboardShortcut();
+  }
+});
+
+// Search overlay functions
+function createSearchOverlay() {
+  // Remove existing overlay if any
+  if (searchOverlay) {
+    searchOverlay.remove();
+  }
+
+  // Create the overlay container
+  searchOverlay = document.createElement('div');
+  searchOverlay.id = 'betterFind-overlay';
+  searchOverlay.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 350px;
+    max-height: 80vh;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  `;
+
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: #007bff;
+    color: white;
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  `;
+  header.innerHTML = `
+    <span>Better Find on Page</span>
+    <button id="betterFind-close" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">×</button>
+  `;
+
+  // Create search input section
+  const searchSection = document.createElement('div');
+  searchSection.style.cssText = `
+    padding: 16px;
+    border-bottom: 1px solid #eee;
+  `;
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Enter a word to search...';
+  searchInput.id = 'betterFind-search-input';
+  searchInput.style.cssText = `
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+  `;
+
+  const searchButton = document.createElement('button');
+  searchButton.textContent = 'Search';
+  searchButton.id = 'betterFind-search-btn';
+  searchButton.style.cssText = `
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+  `;
+
+  // Create results container
+  const resultsContainer = document.createElement('div');
+  resultsContainer.id = 'betterFind-results';
+  resultsContainer.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    max-height: 400px;
+  `;
+
+  // Assemble the overlay
+  searchSection.appendChild(searchInput);
+  searchSection.appendChild(searchButton);
+  searchOverlay.appendChild(header);
+  searchOverlay.appendChild(searchSection);
+  searchOverlay.appendChild(resultsContainer);
+
+  // Add to page
+  document.body.appendChild(searchOverlay);
+
+  // Add event listeners
+  document.getElementById('betterFind-close').addEventListener('click', hideSearchOverlay);
+  document.getElementById('betterFind-search-btn').addEventListener('click', performSearch);
+  document.getElementById('betterFind-search-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      performSearch();
+    }
+  });
+
+  // Focus on input
+  searchInput.focus();
+}
+
+function hideSearchOverlay() {
+  if (searchOverlay) {
+    searchOverlay.remove();
+    searchOverlay = null;
+  }
+}
+
+function performSearch() {
+  const searchInput = document.getElementById('betterFind-search-input');
+  const searchword = searchInput.value.trim();
+  
+  if (!searchword) {
+    alert('Please enter a search word');
+    return;
+  }
+
+  const resultsContainer = document.getElementById('betterFind-results');
+  resultsContainer.innerHTML = '<div style="text-align: center; color: #666;">Searching...</div>';
+
+  // Perform the search
+  const results = searchWordsOnPage(searchword);
+  currentSearchResults = results;
+  
+  // Display results
+  displayOverlayResults(results, resultsContainer);
+}
+
+function displayOverlayResults(results, container) {
+  if (!results || !results.occurrences || results.occurrences.length === 0) {
+    container.innerHTML = '<div style="text-align: center; color: #666;">No results found</div>';
+    return;
+  }
+
+  const searchword = results.searchword;
+  let html = `
+    <div style="margin-bottom: 12px; padding: 8px; background: #f8f9fa; border-radius: 4px; font-size: 12px;">
+      Found "${searchword}" ${results.total_occurrences} times
+    </div>
+  `;
+
+  results.occurrences.forEach((occurrence, index) => {
+    html += `
+      <div style="margin-bottom: 12px; padding: 12px; border: 1px solid #eee; border-radius: 4px; cursor: pointer;" 
+           onclick="window.postMessage({type: 'betterFind-highlight', index: ${index}, searchword: '${searchword}'}, '*')">
+        <div style="font-weight: 600; margin-bottom: 4px;">Match ${index + 1}</div>
+        <div style="font-size: 12px; color: #666;">Position: ${occurrence.position}</div>
+        <div style="font-size: 12px; margin-top: 4px;">${occurrence.text}</div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+// Listen for highlight messages from the overlay
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'betterFind-highlight') {
+    highlightWordOnPage(event.data.index, event.data.searchword);
+  }
+});

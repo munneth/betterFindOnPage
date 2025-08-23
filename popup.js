@@ -1,3 +1,28 @@
+// Initialize shortcut toggle state
+document.addEventListener('DOMContentLoaded', () => {
+  const shortcutToggle = document.getElementById('shortcutToggle');
+  
+  // Load saved state
+  chrome.storage.sync.get(['shortcutEnabled'], (result) => {
+    shortcutToggle.checked = result.shortcutEnabled || false;
+  });
+  
+  // Save state when toggled
+  shortcutToggle.addEventListener('change', () => {
+    const enabled = shortcutToggle.checked;
+    chrome.storage.sync.set({ shortcutEnabled: enabled });
+    
+    // Send message to content script to enable/disable keyboard listener
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      chrome.tabs.sendMessage(tab.id, { 
+        action: "toggleShortcut", 
+        enabled: enabled 
+      });
+    });
+  });
+});
+
 document.getElementById("scrapeBtn").addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
