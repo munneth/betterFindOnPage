@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Better Find on Page",
+  "name": "LinkSeek",
   "version": "1.0",
-  "description": "Enhanced find functionality with intelligent crawling.",
+  "description": "A better find on page and enhanced Ctrl+F experience with intelligent crawling and word context.",
   "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -17,5 +17,11 @@
   ],
   "action": {
     "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "16x16.png",
+    "32": "32x32.png",
+    "48": "48x48.png",
+    "128": "128x128.png"
   }
 }

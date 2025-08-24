@@ -37,7 +37,7 @@ window.toggleDropdown = toggleDropdown;
 window.handleLinkedPageClick = handleLinkedPageClick;
 
 // Test if content script is loaded
-console.log('Better Find on Page content script loaded on:', window.location.href);
+console.log('LinkSeek content script loaded on:', window.location.href);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Content script received message:', request.action, 'on page:', window.location.href);
@@ -499,7 +499,7 @@ function createSearchOverlay() {
     align-items: center;
   `;
   header.innerHTML = `
-    <span>Better Find on Page</span>
+    <span>LinkSeek</span>
     <button id="betterFind-close" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px;">×</button>
   `;
 
